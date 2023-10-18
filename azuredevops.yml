@@ -1,52 +1,75 @@
-trigger:
-  branches:
-    include:
-    - main
+
+trigger: none
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
+
+variables:
+  bkstrgrg: 'RG-1'
+  bkstrg: 'sktfaccountnew'
+  bkcontainer: 'sktfcontainernew'
+  bkstrgkety: 'devopspipeline.terraform.tfstate'
+
+stages:
+  - stage: tfvalidate
+    jobs:
+      - job: validate
+        continueOnError: false
+        steps:
+          - task: TerraformInstaller@1
+            displayName: tfinstall
+            inputs:
+              terraformVersion: 'latest'
+          - task: TerraformTaskV4@4
+            displayName: init
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              backendServiceArm: 'doordie'
+              backendAzureRmResourceGroupName: '$(bkstrgrg)'
+              backendAzureRmStorageAccountName: '$(bkstrg)'
+              backendAzureRmContainerName: '$(bkcontainer)'
+              backendAzureRmKey: '$(bkstrgkey)'
+          - task: TerraformTaskV4@4
+            displayName: validate
+            inputs:
+              provider: 'azurerm'
+              command: 'validate'
+  - stage: tfdeploy
+    condition: succeeded('tfvalidate')
+    dependsOn: tfvalidate
+    jobs:
+      - job: apply
+        steps:
+          - task: TerraformInstaller@1
+            displayName: tfinstall
+            inputs:
+              terraformVersion: 'latest'
+          - task: TerraformTaskV4@4
+            displayName: init
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              backendServiceArm: 'doordie'
+              backendAzureRmResourceGroupName: '$(bkstrgrg)'
+              backendAzureRmStorageAccountName: '$(bkstrg)'
+              backendAzureRmContainerName: '$(bkcontainer)'
+              backendAzureRmKey: '$(bkstrgkey)'
+          - task: TerraformTaskV4@4
+            displayName: plan
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              environmentServiceNameAzureRM: 'doordie'
+          
+          - task: TerraformTaskV4@4
+            displayName: apply
+            inputs:
+              provider: 'azurerm'
+              command: 'apply'
+              environmentServiceNameAzureRM: 'doordie'
 
 
-steps:
-- task: TerraformTaskV4@0
-  displayName: 'Install Terraform'
-  inputs:
-    terraformVersion: 'latest'
 
-- checkout: self
-  displayName: 'Checkout repository'
 
-- task: TerraformTaskV4@1
-  displayName: 'Terraform Init'
-  inputs:
-    command: 'init'
-    workingDirectory: '$(Build.SourcesDirectory)'
-    backendType: 'azurerm'
-    ensureBackend: true
-    backendServiceArm: 'rg-2-sc'
-    resourceGroupName: 'azurerm_resource_group.example.name'
-    storageAccountName: 'sktfaccountnew'
-    containerName: 'sktfcontainernew'
-    key: 'tfstatenew'
 
-- task: TerraformTaskV3@3
-  displayName: 'Terraform Validate'
-  inputs:
-    command: 'validate'
-    workingDirectory: '$(Build.SourcesDirectory)'
-
-- task:TerraformTaskV3@3
-  displayName: 'Terraform Plan'
-  inputs:
-    command: 'plan'
-    workingDirectory: '$(Build.SourcesDirectory)'
-    environmentServiceName: 'rg-2-sc'
-    commandOptions: '-out=tfplan'
-
-- task:TerraformTaskV3@3
-  displayName: 'Terraform Apply'
-  inputs:
-    command: 'apply'
-    workingDirectory: '$(Build.SourcesDirectory)'
-    environmentServiceName: 'rg-2-sc'
-    commandOptions: '-auto-approve -input=false tfplan'
